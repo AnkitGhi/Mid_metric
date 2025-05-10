@@ -197,14 +197,14 @@ if "__main__" == __name__:
     eval_model = os.getenv('EVAL_MODEL')
     if eval_model is None:
         eval_model = "ViT-B/32"
-    root = "./data/"  # Root directory for data
+    root = "./Mid_metric/data/"  # Root directory for data
     samples_json_path = os.path.join(root, "samples.json")  # Path to your samples.json file
     limit = 30000  # number of reference samples
 
     METRICS = [MutualInformationDivergence,  # Ours
                ClipScore,                    # CLIP-S
                RPrecision,                   # CLIP-R-Precision
-               SemanticObjectAccuracy,       # Piece-wise SOA
+            #    SemanticObjectAccuracy,       # Piece-wise SOA
                InfoNCE,                      # Negative InfoNCE loss
                CaptionClipScore,             # OFA-Large+CLIP-S
                ]
