@@ -82,7 +82,7 @@ class CustomImageTextDataset(Dataset):
         # Original format had [quality, alignment] scores
         label = [torch.tensor(1.0), torch.tensor(1.0)]
         
-        return image, reference_caption, str(dataset_index), None, image, label, "custom"
+        return image, reference_caption, str(dataset_index), "", image, label, "custom"
 
 
 def get_clip(eval_model: Module, device: Union[torch.device, int]) \
@@ -284,6 +284,3 @@ if "__main__" == __name__:
     
     print(f"Results saved to {os.path.join(root, 'metric_results.json')}")
 
-
-if __name__ == "__main__":
-    main()
