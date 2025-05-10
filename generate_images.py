@@ -17,7 +17,7 @@ MODEL_NAMES        = [
     "Ertugrul_Qwen2-VL-7B-Captioner-Relaxed_Ertugrul_Qwen2-VL-7B-Captioner-Relaxed",
     "Qwen_Qwen2.5-VL-7B-Instruct_Qwen_Qwen2.5-VL-7B-Instruct"
 ]
-DATA_ROOT          = "./Mid_metric"
+DATA_ROOT          = "./Mid_metric" #Change this when not using google collab
 SAMPLES_FILENAME   = "samples.json"
 BASE_OUTPUT_FOLDER = "./images_generated"
 SD_MODEL_ID        = "stabilityai/stable-diffusion-xl-base-1.0"
