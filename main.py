@@ -23,9 +23,13 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
 
-# Import the original metrics directly - assuming they're defined in metrics.py
-# If metrics.py is not available in the path, you'll need to copy the metric classes here
-from metrics import MutualInformationDivergence, ClipScore, RPrecision, SemanticObjectAccuracy, InfoNCE, CaptionClipScore
+from metrics.mid           import MutualInformationDivergence
+from metrics.clips         import ClipScore
+from metrics.r_precision   import RPrecision
+from metrics.soa           import SemanticObjectAccuracy
+from metrics.infonce       import InfoNCE
+from metrics.caption_clips import CaptionClipScore
+
 
 # Custom dataset for your samples.json format
 class CustomImageTextDataset(Dataset):
@@ -58,13 +62,27 @@ class CustomImageTextDataset(Dataset):
             # Return a blank image if there's an error
             image = torch.zeros((3, 224, 224))
         
-        # Get captions
-        actual_caption = sample['actual_caption']
-        generated_caption = sample['generated_caption']
+        # Get captions - using the field names from your JSON
+        reference_caption = sample['reference']
+        predicted_caption = sample['prediction']
+        dataset_index = sample.get('dataset_index', idx)  # Use dataset_index if available, otherwise idx
         
+        # Format similar to the original code's expectations
+        # real, gt, iid, cid, fake, label, gen_type
+        # Where:
+        # - real is the original image
+        # - gt is the ground truth caption (reference_caption)
+        # - iid is the image ID (use dataset_index as identifier)
+        # - cid is caption ID (None in our case)
+        # - fake is the same image (in original code it would be a generated image)
+        # - label is a quality/alignment rating (not available, use default)
+        # - gen_type is the generation type (use 'custom' in our case)
+        
+        # Use a default label tensor with 1.0 for both quality and alignment
+        # Original format had [quality, alignment] scores
         label = [torch.tensor(1.0), torch.tensor(1.0)]
         
-        return image, actual_caption, image_path, None, image, label, "custom"
+        return image, reference_caption, str(dataset_index), None, image, label, "custom"
 
 
 def get_clip(eval_model: Module, device: Union[torch.device, int]) \
@@ -246,9 +264,10 @@ if "__main__" == __name__:
     output = []
     for i in range(min(n_samples, len(samples))):
         entry = {
+            'dataset_index': samples[i].get('dataset_index', i),
             'image_path': samples[i]['image_path'],
-            'actual_caption': samples[i]['actual_caption'],
-            'generated_caption': samples[i]['generated_caption'],
+            'reference': samples[i]['reference'],
+            'prediction': samples[i]['prediction']
         }
         
         # Add metrics
