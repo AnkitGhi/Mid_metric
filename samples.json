@@ -1,0 +1,67 @@
+{"Salesforce_blip-image-captioning-base_Salesforce_blip-image-captioning-base":[  
+    {
+        "dataset_index": 0,
+        "image_path": "/content/drive/MyDrive/valid_dataset/0.jpg",
+        "reference": "author : a life in photography - - in pictures",
+        "prediction": "actor on the set of crime fiction film"
+    },
+    {
+        "dataset_index": 1,
+        "image_path": "/content/drive/MyDrive/valid_dataset/5.jpg",
+        "reference": "the - bedroom stone cottage can sleep people",
+        "prediction": "the bedroom is set up in a loft with a double bed and a wardrobe"
+    },
+    {
+        "dataset_index": 2,
+        "image_path": "/content/drive/MyDrive/valid_dataset/8.jpg",
+        "reference": "party in the park under cherry blossoms",
+        "prediction": "people sitting under the cherry blossoms"
+    },
+    {
+        "dataset_index": 3,
+        "image_path": "/content/drive/MyDrive/valid_dataset/11.jpg",
+        "reference": "where ' s the best place to show off your nails? right in front of the castle, of course!",
+        "prediction": "i'm not sure if this is a nail art or a nail art, but i'm sure if it's a nail art."
+    },
+    {
+        "dataset_index": 4,
+        "image_path": "/content/drive/MyDrive/valid_dataset/12.jpg",
+        "reference": "that combines elements of a simple vegetable and dish",
+        "prediction": "green leaf on a white plate"
+    }],
+  "Salesforce_blip2-opt-2.7b_Salesforce_blip2-opt-2.7b":[ 
+  {
+        "dataset_index": 0,
+        "image_path": "/content/drive/MyDrive/valid_dataset/0.jpg",
+        "reference": "author : a life in photography - - in pictures",
+        "prediction": "and, of, person person person person person person person a"
+    },
+    {
+        "dataset_index": 1,
+        "image_path": "/content/drive/MyDrive/valid_dataset/5.jpg",
+        "reference": "the - bedroom stone cottage can sleep people",
+        "prediction": ": bedroom the has bedrooms the and bedrooms the are"
+    },
+    {
+        "dataset_index": 2,
+        "image_path": "/content/drive/MyDrive/valid_dataset/8.jpg",
+        "reference": "party in the park under cherry blossoms",
+        "prediction": "under cherry in spring"
+    },
+    {
+        "dataset_index": 3,
+        "image_path": "/content/drive/MyDrive/valid_dataset/11.jpg",
+        "reference": "where ' s the best place to show off your nails? right in front of the castle, of course!",
+        "prediction": "is for kids the"
+    },
+    {
+        "dataset_index": 4,
+        "image_path": "/content/drive/MyDrive/valid_dataset/12.jpg",
+        "reference": "that combines elements of a simple vegetable and dish",
+        "prediction": "green on plate a"
+    }
+  ]
+    
+}
+
+
