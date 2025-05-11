@@ -7,12 +7,12 @@ from PIL import Image
 # ─── CONFIGURATION ────────────────────────────────────────────────────────
 SAMPLES_JSON = "./Mid_metric/samples.json"
 OUTPUT_DIR   = "./generated_images"
-MODEL_IDS    = [
+MODEL_NAMES = [
     "Salesforce_blip-image-captioning-base_Salesforce_blip-image-captioning-base",
     "Salesforce_blip2-opt-2.7b_Salesforce_blip2-opt-2.7b",
     "microsoft_git-base_microsoft_git-base",
+    "nlpconnect_vit-gpt2-image-captioning_nlpconnect_vit-gpt2-image-captioning",
     "Ertugrul_Qwen2-VL-7B-Captioner-Relaxed_Ertugrul_Qwen2-VL-7B-Captioner-Relaxed",
-    "Qwen_Qwen2.5-VL-7B-Instruct_Qwen_Qwen2.5-VL-7B-Instruct"
 ]
 SD_MODEL      = "stabilityai/stable-diffusion-xl-base-1.0"
 DEVICE        = "cuda" if torch.cuda.is_available() else "cpu"
