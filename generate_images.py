@@ -1,115 +1,85 @@
-import json
 import os
+import json
 import torch
-from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler
-from transformers import logging as transformers_logging
+from diffusers import DiffusionPipeline
+from PIL import Image
 
-# Silence diffusers/transformers warnings
-transformers_logging.set_verbosity_error()
-
-# Configuration
-MODEL_NAMES        = [
+# ─── CONFIGURATION ────────────────────────────────────────────────────────
+SAMPLES_JSON = "./Mid_metric/samples.json"
+OUTPUT_DIR   = "./generated_images"
+MODEL_IDS    = [
     "Salesforce_blip-image-captioning-base_Salesforce_blip-image-captioning-base",
     "Salesforce_blip2-opt-2.7b_Salesforce_blip2-opt-2.7b",
     "microsoft_git-base_microsoft_git-base",
-    "nlpconnect_vit-gpt2-image-captioning_nlpconnect_vit-gpt2-image-captioning",
-    "meta-llama_Llama-3.2-11B-Vision-Instruct_meta-llama_Llama-3.2-11B-Vision-Instruct",
     "Ertugrul_Qwen2-VL-7B-Captioner-Relaxed_Ertugrul_Qwen2-VL-7B-Captioner-Relaxed",
     "Qwen_Qwen2.5-VL-7B-Instruct_Qwen_Qwen2.5-VL-7B-Instruct"
 ]
-DATA_ROOT          = "./Mid_metric" #Change this when not using google collab
-SAMPLES_FILENAME   = "samples.json"
-BASE_OUTPUT_FOLDER = "./images_generated"
-SD_MODEL_ID        = "stabilityai/stable-diffusion-xl-base-1.0"
-DEVICE             = "cuda" if torch.cuda.is_available() else "cpu"
+SD_MODEL      = "stabilityai/stable-diffusion-xl-base-1.0"
+DEVICE        = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Create base output directory
-os.makedirs(BASE_OUTPUT_FOLDER, exist_ok=True)
-print(f"▶ Images will be written under {BASE_OUTPUT_FOLDER}/")
+# ─── SETUP ─────────────────────────────────────────────────────────────────
+# load your SD pipeline once
+pipeline = DiffusionPipeline.from_pretrained(
+    SD_MODEL,
+    torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32
+).to(DEVICE)
+# disable safety checker if needed
+pipeline.safety_checker = lambda images, **kwargs: (images, [False] * len(images))
 
-def load_pipeline(model_id, device):
-    """
-    Load the SD XL pipeline with fp16 on GPU or fp32 on CPU,
-    attention slicing, CPU offload, and a more efficient scheduler.
-    """
-    dtype = torch.float16 if device == "cuda" else torch.float32
-    pipe = DiffusionPipeline.from_pretrained(
-        model_id,
-        torch_dtype=dtype,
-        use_safetensors=True,
-        variant="fp16" if device == "cuda" else None
-    )
-    # switch to DPM‐Solver for fewer timesteps/memory
-    pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-    # reduce attention memory
-    pipe.enable_attention_slicing()
-    # optionally offload to CPU to save VRAM
-    try:
-        pipe.enable_model_cpu_offload()
-    except:
-        pass
-    pipe = pipe.to(device)
-    # disable safety checker (avoids None returns)
-    pipe.safety_checker = lambda images, **kwargs: (images, [False] * len(images))
-    return pipe
+# make output folders
+refs_dir = os.path.join(OUTPUT_DIR, "references")
+os.makedirs(refs_dir, exist_ok=True)
+model_dirs = {}
+for m in MODEL_IDS:
+    d = os.path.join(OUTPUT_DIR, m)
+    os.makedirs(d, exist_ok=True)
+    model_dirs[m] = d
 
-# Load the diffusion pipeline once
-print(f"▶ Loading Stable Diffusion XL pipeline on {DEVICE}...")
-pipeline = load_pipeline(SD_MODEL_ID, DEVICE)
-print("✅ Pipeline ready.")
+# ─── LOAD MERGED samples.json ─────────────────────────────────────────────
+with open(SAMPLES_JSON, "r") as f:
+    model_data = json.load(f)       # now a dict: model_name -> list of samples
 
-# Path for reference images
-refs_dir = os.path.join(BASE_OUTPUT_FOLDER, "references_images")
+# get your model names (will match MODEL_IDS)
+models = list(model_data.keys())
+if not models:
+    raise ValueError("no models found in JSON")
 
-for model_name in MODEL_NAMES:
-    # Samples live under Mid_metric/<model_name>/samples.json
-    samples_path = os.path.join(DATA_ROOT, model_name, SAMPLES_FILENAME)
-    pred_dir     = os.path.join(BASE_OUTPUT_FOLDER, f"{model_name}_predict_images")
-    os.makedirs(pred_dir, exist_ok=True)
+# assume every model produced the same number of samples
+samples = model_data[models[0]]     # pick the first model’s list to drive the loop
+print(f"Loaded {len(samples)} samples (via model '{models[0]}')")
 
-    # Load samples.json for this model
-    try:
-        with open(samples_path, "r") as f:
-            samples = json.load(f)
-        print(f"\n▶ [{model_name}] Loaded {len(samples)} samples")
-    except Exception as e:
-        print(f"❌ Could not load {samples_path}: {e}")
+print(f"Generating images on {DEVICE}...")
+
+# ─── 1) generate *reference* images once ───────────────────────────────────
+for sample in samples:
+    img_id       = os.path.splitext(os.path.basename(sample["image_path"]))[0]
+    ref_caption  = sample.get("reference", "").strip()
+    if not ref_caption:
         continue
 
-    # Generate reference images if not done yet
-    if not os.path.exists(refs_dir):
-        os.makedirs(refs_dir, exist_ok=True)
-        print(f"▶ Generating reference images → {refs_dir}/")
-        for sample in samples:
-            img_id = os.path.splitext(os.path.basename(sample["image_path"]))[0]
-            ref_caption = sample.get("reference","") or ""
-            if not ref_caption.strip():
-                print(f"  ↩ Skipping {img_id}: empty reference")
-                continue
-            try:
-                img = pipeline(ref_caption).images[0]
-                path = os.path.join(refs_dir, f"{img_id}_reference.png")
-                img.save(path)
-                print(f"  🖼 Saved ref: {img_id}")
-            except Exception as e:
-                print(f"  ⚠ Error ref {img_id}: {e}")
-    else:
-        print(f"▶ Skipping reference images (already in {refs_dir}/)")
+    try:
+        img = pipeline(ref_caption).images[0]
+        img.save(os.path.join(refs_dir, f"{img_id}.png"))
+        print(f"[ref ] {img_id}")
+    except Exception as e:
+        print(f"✖ ref  {img_id}: {e}")
 
-    # Generate this model's prediction images
-    print(f"▶ Generating {model_name} predictions → {pred_dir}/")
-    for sample in samples:
-        img_id = os.path.splitext(os.path.basename(sample["image_path"]))[0]
-        pred_caption = sample.get("prediction","") or ""
-        if not pred_caption.strip():
-            print(f"  ↩ Skipping {img_id}: empty prediction")
+# ─── 2) for each model, generate its *prediction* images ───────────────────
+for i, sample in enumerate(samples):
+    img_id = os.path.splitext(os.path.basename(sample["image_path"]))[0]
+
+    for model_name in models:
+        out_dir = model_dirs[model_name]
+        # each model’s list is parallel to samples
+        pred_caption = model_data[model_name][i].get("prediction", "").strip()
+        if not pred_caption:
             continue
+
         try:
             img = pipeline(pred_caption).images[0]
-            path = os.path.join(pred_dir, f"{img_id}_prediction.png")
-            img.save(path)
-            print(f"  🖼 Saved pred: {img_id}")
+            img.save(os.path.join(out_dir, f"{img_id}.png"))
+            print(f"[{model_name[:8]}] {img_id}")
         except Exception as e:
-            print(f"  ⚠ Error pred {img_id}: {e}")
+            print(f"✖ [{model_name[:8]}] {img_id}: {e}")
 
-print("\n🎉 All done!")
+print("✔ Image generation complete.")
