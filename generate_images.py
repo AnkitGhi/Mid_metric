@@ -5,7 +5,7 @@ from diffusers import DiffusionPipeline
 from PIL import Image
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────
-SAMPLES_JSON = "./Mid_metric/samples.json"
+SAMPLES_JSON = "./samples.json"
 OUTPUT_DIR   = "./generated_images"
 MODEL_IDS    = [
     "Salesforce_blip-image-captioning-base_Salesforce_blip-image-captioning-base",
