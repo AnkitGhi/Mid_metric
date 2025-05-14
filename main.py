@@ -29,9 +29,7 @@ MODEL_NAMES = [
     "Salesforce_blip2-opt-2.7b_Salesforce_blip2-opt-2.7b",
     "microsoft_git-base_microsoft_git-base",
     "nlpconnect_vit-gpt2-image-captioning_nlpconnect_vit-gpt2-image-captioning",
-    "meta-llama_Llama-3.2-11B-Vision-Instruct_meta-llama_Llama-3.2-11B-Vision-Instruct",
     "Ertugrul_Qwen2-VL-7B-Captioner-Relaxed_Ertugrul_Qwen2-VL-7B-Captioner-Relaxed",
-    "Qwen_Qwen2.5-VL-7B-Instruct_Qwen_Qwen2.5-VL-7B-Instruct"
 ]
 
 # The set of metrics to compute per sample
@@ -156,7 +154,7 @@ if __name__ == "__main__":
     DEVICE     = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     for model_name in MODEL_NAMES:
-        root = os.path.join("./Mid_metric", model_name)
+        root = os.path.join("./", model_name)
         samples_json = os.path.join(root, "samples.json")
         results_json = os.path.join(root, "metric_results.json")
         cache_dir    = os.path.join(root, ".cache")
@@ -230,4 +228,4 @@ if __name__ == "__main__":
         # write metric_results.json
         with open(results_json, 'w') as f:
             json.dump(output, f, indent=2)
-        print(f"  ✅ Wrote {results_json}")
+        print(f"Wrote {results_json}")
