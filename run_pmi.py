@@ -8,11 +8,11 @@ from mid_extension import MIDWithBatchPMI
 def main():
     # 1) DataLoaders
     ref_loader = DataLoader(
-        ReferenceImageCaptionDataset("reference_data.json"),
+        ReferenceImageCaptionDataset("./Mid_metric/reference_data.json"),
         batch_size=32, shuffle=True
     )
     pair_loader = DataLoader(
-        PairImageCaptionDataset("new_pairs.json"),
+        PairImageCaptionDataset("./Mid_metric/new_pairs.json"),
         batch_size=32, shuffle=False
     )
 
