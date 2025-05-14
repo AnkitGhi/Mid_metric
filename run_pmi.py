@@ -36,5 +36,23 @@ def main():
     all_pmis = torch.cat(all_pmis, dim=0)
     print("Per-sample PMI:", all_pmis)
 
+    pmi_list = all_pmis.tolist()  
+
+    # 2) Access by index
+    first  = all_pmis[0].item()
+    second = all_pmis[1].item()
+    print("First PMI:", first)
+    print("Second PMI:", second)
+
+    # 3) Iterate with your original entries
+    import json
+    with open("new_pairs.json", "r") as f:
+        entries = json.load(f)
+
+    for idx, (entry, pmi) in enumerate(zip(entries, pmi_list)):
+        print(f"Pair #{idx}:")
+        print("  Image:  ", entry["image_path"])
+        print("  Caption:", entry["caption"])
+        print(f"  PMI = {pmi:.4f}\n")
 if __name__ == "__main__":
     main()
