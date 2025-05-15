@@ -25,7 +25,7 @@ print(len(all_scores))
 
 
 # Replace with the path to your JSON file
-json_path = '/Users/ankitghimire/Downloads/pmi_results.json'
+json_path = '/Users/ankitghimire/Downloads/new_pairs_with_mid.json'
 
 
 
@@ -33,14 +33,15 @@ with open(json_path, 'r') as f:
     data = json.load(f)
 
 # Extract all PMI values
-pmi_values = [entry['PMI'] for entry in data]
+pmi_values = [entry['mid_pmi_score'] for entry in data]
+average_value = [entry['average_score'] for entry in data]
 
 
 expanded = [x for x in pmi_values for _ in range(3)]
 print(len(expanded))
 
 # compute Kendall’s tau-c
-tau_c, p_value = kendalltau(expanded, all_scores, variant='c')
+tau_c, p_value = kendalltau(pmi_values, average_value, variant='c')
 
 print(f"Kendall’s tau-c: {tau_c:.4f}")
 print(f"two-sided p-value: {p_value:.4g}")
