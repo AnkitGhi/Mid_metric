@@ -115,7 +115,7 @@ def load_data(json_path):
 def process_image_text_file(file_path):
     image_paths = []
     captions = []
-    base_path = "/drive/MyDrive/Flickr8k/"
+    base_path = "./drive/MyDrive/Flickr8k/"
 
     try:
         with open(file_path, 'r') as f:
@@ -203,14 +203,14 @@ if __name__ == "__main__":
     model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
     processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     
-    actual_file_path = "Mid_metrics/annotations.txt"
+    actual_file_path = "./Mid_metric/annotations.txt"
     image_list, caption_list = process_image_text_file(actual_file_path)
 
     img_feats_ref, txt_feats_ref = embed_dataset_batch(image_list, caption_list, batch_size=32)
     print("Image feats shape:", img_feats_ref.shape)  # e.g. (N_ref, 512)
     print("Text  feats shape:", txt_feats_ref.shape)  # e.g. (N_ref, 512)
 
-    json_path = "Mid_metrics/new_pairs.json"
+    json_path = "./Mid_metric/new_pairs.json"
     test_image, test_captions = load_data(json_path)
     test_image_feat, test_cap_feat = embed_dataset_batch(test_image, test_captions, batch_size=32)
     
