@@ -1,68 +1,48 @@
-# run_pmi.py
+import csv
 
-import json
-import torch
-from torch.utils.data import DataLoader
+def create_csv_from_txt(txt_file_path, csv_file_path):
+    """
+    Reads a text file with image names and captions and creates a CSV file.
 
-from datasets import ReferenceImageCaptionDataset, PairImageCaptionDataset
-from mid_extension import MIDWithBatchPMI
+    Args:
+        txt_file_path (str): The path to the input text file.
+        csv_file_path (str): The path to the output CSV file.
+    """
+    with open(txt_file_path, 'r') as infile, open(csv_file_path, 'w', newline='') as outfile:
+        csv_writer = csv.writer(outfile)
+        # Write the header row for the CSV file
+        csv_writer.writerow(['image', 'caption'])
 
-def main():
-    # 1) DataLoaders
-    ref_loader = DataLoader(
-        ReferenceImageCaptionDataset("./Mid_metric/reference_data.json"),
-        batch_size=32, shuffle=False  # shuffle=False for reproducibility
-    )
-    pair_loader = DataLoader(
-        PairImageCaptionDataset("./Mid_metric/new_pairs.json"),
-        batch_size=32, shuffle=False
-    )
+        for line in infile:
+            # Strip any leading/trailing whitespace
+            line = line.strip()
+            if not line:  # Skip empty lines
+                continue
 
-    # 2) Initialize MID (with a small epsilon for stability)
-    mid = MIDWithBatchPMI(feature=512, limit=1000000, eps=5e-4)
+            # Split the line at the first tab character
+            parts = line.split('\t', 1)
+            if len(parts) == 2:
+                image_info, caption = parts
+                # Extract the part before '#'
+                image_name = image_info.split('#')[0]
+                # Construct the full image path
+                image_path = f"drive/MyDrive/Flickr8k/{image_name}"
+                csv_writer.writerow([image_path, caption])
+            else:
+                print(f"Skipping malformed line: {line}")
 
-    # 3) Fit reference Gaussians
-    for x_ref, y_ref, x0_ref in ref_loader:
-        mid.update(x_ref, y_ref, x0_ref)
+# --- Example Usage ---
+# Replace 'input.txt' with the actual path to your text file
+# Replace 'output.csv' with the desired path for your CSV file
+input_file = 'annotations.txt'
+output_file = 'output.csv'
 
-    # 4a) Overall MID on reference set
-    overall = mid.compute()
-    print(f"Overall MID score (reference set): {overall.item():.4f}")
 
-    # 4b) Per-sample PMI on new pairs
-    all_pmis = []
-    for x_new, y_new in pair_loader:
-        pmis = mid.batch_pmi(x_new, y_new)  # Tensor of shape [batch_size]
-        all_pmis.append(pmis)
-    all_pmis = torch.cat(all_pmis, dim=0)  # shape [N_new]
+create_csv_from_txt(input_file, output_file)
 
-    # Convert to Python list
-    pmi_list = all_pmis.tolist()
+print(f"CSV file '{output_file}' created successfully.")
 
-    # Print first two as a sanity check
-    print("First PMI:", pmi_list[0])
-    print("Second PMI:", pmi_list[1])
-
-    # 5) Load original new-pairs entries
-    with open("./Mid_metric/new_pairs.json", "r") as f:
-        entries = json.load(f)
-
-    # 6) Build results and print
-    results = []
-    for entry, pmi in zip(entries, pmi_list):
-        print(f"Image:   {entry['image_path']}")
-        print(f"Caption: {entry['caption']}")
-        print(f"PMI = {pmi:.4f}\n")
-        results.append({
-            "image_path": entry["image_path"],
-            "caption":    entry["caption"],
-            "PMI":        pmi
-        })
-
-    # 7) Save to a new JSON file
-    with open("pmi_results.json", "w") as out:
-        json.dump(results, out, indent=2)
-    print(f"Wrote {len(results)} entries to pmi_results.json")
-
-if __name__ == "__main__":
-    main()
+# You can also print the content of the output file to verify:
+# with open(output_file, 'r') as f:
+#     print("\nContent of the output CSV file:")
+#     print(f.read())

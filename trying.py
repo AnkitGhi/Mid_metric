@@ -6,104 +6,10 @@ from PIL import Image
 import numpy as np
 from metrics.mid import MutualInformationDivergence
 from transformers import CLIPProcessor, CLIPModel
-
+from torch.utils.data import Dataset, DataLoader
 from numpy.linalg import slogdet, inv
 
-def fit_gaussians(image_feats: np.ndarray,
-                  text_feats: np.ndarray,
-                  reg: float = 1e-6):
-    """
-    Given:
-      image_feats: shape (N, d_i)
-      text_feats : shape (N, d_t)
-    Returns:
-      mu_img, inv_cov_img, logdet_img,
-      mu_txt, inv_cov_txt, logdet_txt,
-      mu_joint, inv_cov_joint, logdet_joint
-    """
-    # 1) Marginal image Gaussian
-    mu_img = image_feats.mean(axis=0)  # (d_i,)
-    cov_img = np.cov(image_feats, rowvar=False)  # (d_i, d_i)
-    cov_img += reg * np.eye(cov_img.shape[0])    # regularize
-    inv_cov_img = inv(cov_img)
-    sign_i, logdet_img = slogdet(cov_img)
-
-    # 2) Marginal text Gaussian
-    mu_txt = text_feats.mean(axis=0)   # (d_t,)
-    cov_txt = np.cov(text_feats, rowvar=False)  # (d_t, d_t)
-    cov_txt += reg * np.eye(cov_txt.shape[0])
-    inv_cov_txt = inv(cov_txt)
-    sign_t, logdet_txt = slogdet(cov_txt)
-
-    # 3) Joint Gaussian
-    joint = np.concatenate([image_feats, text_feats], axis=1)  # (N, d_i+d_t)
-    mu_joint = joint.mean(axis=0)  
-    cov_joint = np.cov(joint, rowvar=False)  # (d_i+d_t, d_i+d_t)
-    cov_joint += reg * np.eye(cov_joint.shape[0])
-    inv_cov_joint = inv(cov_joint)
-    sign_j, logdet_joint = slogdet(cov_joint)
-
-    return (mu_img, inv_cov_img, logdet_img,
-            mu_txt, inv_cov_txt, logdet_txt,
-            mu_joint, inv_cov_joint, logdet_joint)
-
-def pmi_scores_batch(
-    img_feats: np.ndarray,      # (N, d_i)
-    txt_feats: np.ndarray,      # (N, d_t)
-    mu_img, inv_cov_img, logdet_img,
-    mu_txt, inv_cov_txt, logdet_txt,
-    mu_joint, inv_cov_joint, logdet_joint
-) -> np.ndarray:
-    N = img_feats.shape[0]
-    d_i = img_feats.shape[1]
-    d_t = txt_feats.shape[1]
-    const_i = d_i * np.log(2 * np.pi)
-    const_t = d_t * np.log(2 * np.pi)
-    const_j = (d_i + d_t) * np.log(2 * np.pi)
-
-    # compute img log-probs
-    di = img_feats - mu_img
-    lp_img = -0.5 * np.einsum('ni,ij,nj->n', di, inv_cov_img, di) - 0.5 * (const_i + logdet_img)
-
-    # compute txt log-probs
-    dt = txt_feats - mu_txt
-    lp_txt = -0.5 * np.einsum('ni,ij,nj->n', dt, inv_cov_txt, dt) - 0.5 * (const_t + logdet_txt)
-
-    # compute joint log-probs
-    joint_feats = np.concatenate([img_feats, txt_feats], axis=1)  # (N, d_i+d_t)
-    dj = joint_feats - mu_joint
-    lp_joint = -0.5 * np.einsum('ni,ij,nj->n', dj, inv_cov_joint, dj) - 0.5 * (const_j + logdet_joint)
-
-    return lp_joint - (lp_img + lp_txt)
-
-def pmi_scores_in_batches(
-    img_feats: np.ndarray,      # shape (N, d_i)
-    txt_feats: np.ndarray,      # shape (N, d_t)
-    batch_size: int,
-    mu_img, inv_cov_img, logdet_img,
-    mu_txt, inv_cov_txt, logdet_txt,
-    mu_joint, inv_cov_joint, logdet_joint
-) -> np.ndarray:
-    """
-    Compute PMI scores in batches to avoid memory spikes.
-    Returns an array of shape (N,) of PMI values.
-    """
-    N = img_feats.shape[0]
-    scores = []
-    for start in range(0, N, batch_size):
-        end = start + batch_size
-        bi = img_feats[start:end]
-        bt = txt_feats[start:end]
-        # vectorized pmi for this batch
-        batch_pmi = pmi_scores_batch(
-            bi, bt,
-            mu_img, inv_cov_img, logdet_img,
-            mu_txt, inv_cov_txt, logdet_txt,
-            mu_joint, inv_cov_joint, logdet_joint
-        )
-        scores.append(batch_pmi)
-    return np.concatenate(scores, axis=0)
-
+from tqdm import tqdm
 
 def load_data(json_path):
     with open(json_path, 'r', encoding='utf-8') as f:
@@ -150,85 +56,119 @@ def process_image_text_file(file_path):
 
     return image_paths, captions
 
+class ClipFeatureDataset(Dataset):
+    def __init__(self, image_paths: list[str], captions: list[str], device="cuda"):
+        self.image_paths = image_paths
+        self.captions    = captions
+        self.device      = device
+        self.model       = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+        self.processor   = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-def embed_dataset_batch(
-    image_paths: list[str],
-    captions:    list[str],
-    batch_size:  int = 32
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Embed images and captions in batches using CLIP.
-    Returns:
-      image_feats: array shape (N, d_i)
-      text_feats:  array shape (N, d_t)
-    """
-    assert len(image_paths) == len(captions), "Length mismatch!"
-    all_img_feats = []
-    all_txt_feats = []
-    
-    for i in range(0, len(image_paths), batch_size):
-        batch_paths = image_paths[i : i + batch_size]
-        batch_caps  = captions   [i : i + batch_size]
-        
-        # Load & preprocess
-        images = [Image.open(p).convert("RGB") for p in batch_paths]
-        inputs = processor(
-            text=batch_caps,
-            images=images,
-            return_tensors="pt",
-            padding=True
-        ).to(device)
-        
-        # Forward pass
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+
+        img = Image.open(self.image_paths[idx]).convert("RGB")
+        text = self.captions[idx]
+
+        inputs = self.processor(text=[text], images=[img], return_tensors="pt", padding=True)
+
+        pixel_vals = inputs["pixel_values"].to(self.device)
+        input_ids  = inputs["input_ids"].to(self.device)
+        attention  = inputs["attention_mask"].to(self.device)
+
         with torch.no_grad():
-            img_feats = model.get_image_features(pixel_values=inputs.pixel_values)       # (B, d_i)
-            txt_feats = model.get_text_features(input_ids=inputs.input_ids,
-                                                attention_mask=inputs.attention_mask)    # (B, d_t)
-        
-        # Collect
-        all_img_feats.append(img_feats.cpu().numpy())
-        all_txt_feats.append(txt_feats.cpu().numpy())
-    
-    # Concatenate batches
-    image_feats = np.concatenate(all_img_feats, axis=0)
-    text_feats  = np.concatenate(all_txt_feats,  axis=0)
-    return image_feats, text_feats
+            img_feat  = self.model.get_image_features(pixel_vals)
+            txt_feat  = self.model.get_text_features(input_ids, attention_mask=attention)
 
-# --- Example usage ---
+        return img_feat.double().squeeze(0), txt_feat.double().squeeze(0)
+
+class GaussianEstimator:
+    def __init__(self, D, reg=1e-6, device="cpu"):
+        self.D = D
+        self.reg = reg
+        self.device = device
+        # counters
+        self.count = 0
+        # 1st moments
+        self.sum_x = torch.zeros(D, dtype=torch.float64, device=device)
+        self.sum_y = torch.zeros(D, dtype=torch.float64, device=device)
+        self.sum_z = torch.zeros(2*D, dtype=torch.float64, device=device)
+        # 2nd moments
+        self.sum_xx = torch.zeros(D, D, dtype=torch.float64, device=device)
+        self.sum_yy = torch.zeros(D, D, dtype=torch.float64, device=device)
+        self.sum_zz = torch.zeros(2*D, 2*D, dtype=torch.float64, device=device)
+
+    def update(self, x_batch: torch.Tensor, y_batch: torch.Tensor):
+        """
+        x_batch, y_batch: both (B, D), dtype float64
+        """
+        B = x_batch.shape[0]
+        z_batch = torch.cat([x_batch, y_batch], dim=1)  # (B, 2D)
+
+        self.count += B
+        self.sum_x += x_batch.sum(dim=0)
+        self.sum_y += y_batch.sum(dim=0)
+        self.sum_z += z_batch.sum(dim=0)
+
+        self.sum_xx += x_batch.t() @ x_batch
+        self.sum_yy += y_batch.t() @ y_batch
+        self.sum_zz += z_batch.t() @ z_batch
+
+    def finalize(self):
+        """Call after all updates. Returns the dict of mus, invΣs, and log-dets."""
+        N = self.count
+        μ_x = self.sum_x / N
+        μ_y = self.sum_y / N
+        μ_z = self.sum_z / N
+
+        # unbiased cov = (Σ x xᵀ - N μ μᵀ)/(N−1)
+        Σ_x = (self.sum_xx - N * torch.outer(μ_x, μ_x)) / (N - 1)
+        Σ_y = (self.sum_yy - N * torch.outer(μ_y, μ_y)) / (N - 1)
+        Σ_z = (self.sum_zz - N * torch.outer(μ_z, μ_z)) / (N - 1)
+
+        # regularize
+        Σ_x += self.reg * torch.eye(self.D, device=self.device)
+        Σ_y += self.reg * torch.eye(self.D, device=self.device)
+        Σ_z += self.reg * torch.eye(2*self.D, device=self.device)
+
+        # invert & slogdet
+        invΣ_x = torch.linalg.inv(Σ_x)
+        invΣ_y = torch.linalg.inv(Σ_y)
+        invΣ_z = torch.linalg.inv(Σ_z)
+        _, logdet_x = torch.linalg.slogdet(Σ_x)
+        _, logdet_y = torch.linalg.slogdet(Σ_y)
+        _, logdet_z = torch.linalg.slogdet(Σ_z)
+
+        return {
+            "mu_x": μ_x,    "mu_y": μ_y,    "mu_z": μ_z,
+            "invΣ_x": invΣ_x, "invΣ_y": invΣ_y, "invΣ_z": invΣ_z,
+            "logdet_x": logdet_x, "logdet_y": logdet_y, "logdet_z": logdet_z
+        }
 
 if __name__ == "__main__":
-    # Your lists of image paths and captions:
-    
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
-    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
     
     actual_file_path = "./Mid_metric/annotations.txt"
     image_list, caption_list = process_image_text_file(actual_file_path)
 
-    img_feats_ref, txt_feats_ref = embed_dataset_batch(image_list, caption_list, batch_size=32)
-    print("Image feats shape:", img_feats_ref.shape)  # e.g. (N_ref, 512)
-    print("Text  feats shape:", txt_feats_ref.shape)  # e.g. (N_ref, 512)
-
     json_path = "./Mid_metric/new_pairs.json"
     test_image, test_captions = load_data(json_path)
-    test_image_feat, test_cap_feat = embed_dataset_batch(test_image, test_captions, batch_size=32)
     
-    (mu_img, inv_cov_img, logdet_img,
-     mu_txt, inv_cov_txt, logdet_txt,
-     mu_joint, inv_cov_joint, logdet_joint) = fit_gaussians(
-        img_feats_ref, txt_feats_ref
-    )
-     
-    pmi_all = pmi_scores_in_batches(
-    test_image_feat,
-    test_cap_feat,
-    batch_size=128,
-    mu_img=mu_img, inv_cov_img=inv_cov_img, logdet_img=logdet_img,
-    mu_txt=mu_txt, inv_cov_txt=inv_cov_txt, logdet_txt=logdet_txt,
-    mu_joint=mu_joint, inv_cov_joint=inv_cov_joint, logdet_joint=logdet_joint
+    dataset = ClipFeatureDataset(image_list, caption_list, device="cuda")
+    real_dataloader = DataLoader(
+    dataset,
+    batch_size=64,    
+    shuffle=False,
+    num_workers=2
 )
+    
+    est = GaussianEstimator(D=512, device="cuda")
+    for x_batch, y_batch in tqdm(real_dataloader, desc="training"):
+                
+        x_batch = x_batch.double().to("cuda")
+        y_batch = y_batch.double().to("cuda")
+        est.update(x_batch, y_batch)
 
-    with open("pmi_all.txt", "w") as f:
-        for score in pmi_all:
-            f.write(f"{score:.6f}\n")
+    dists = est.finalize()
+
